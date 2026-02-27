@@ -1,0 +1,21 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  issue_comment:
+    types: [created]
+
+jobs:
+  integrate:
+    if: github.event_name == 'push'
+    permissions:
+      pull-requests: write
+      contents: write
+      issues: write
+      packages: write
+    uses: DLS-soft2/shared-workflows/.github/workflows/python-build.yaml@main
+    with:
+      service-specific-input: "order-service"
+    secrets: inherit

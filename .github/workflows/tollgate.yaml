@@ -1,0 +1,21 @@
+name: Tollgate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+  workflow_dispatch:
+
+jobs:
+  use-common-actions:
+    permissions:
+      pull-requests: write
+      contents: read
+      issues: write
+    uses: DLS-soft2/shared-workflows/.github/workflows/python-tollgate.yaml@main
+    with:
+      service-specific-input: "order-service"
+    secrets: inherit
