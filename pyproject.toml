@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "order-service"
+version = "0.1.0"
+description = "A FastAPI project template managed with Poetry"
+authors = ["Your Name <you@example.com>"]
+license = ""
+readme = "README.md"
+packages = [{ include = "app" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115.0"
+uvicorn = { extras = ["standard"], version = "^0.32.0" }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
