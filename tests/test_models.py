@@ -1,37 +1,77 @@
 import uuid
-from app.models import Order, OrderItem, OrderSnapshot, ProcessedEvent
+import pytest
+from sqlalchemy.exc import IntegrityError
+from app.models import Order, OrderItem, OrderSnapshot, OrderTombstone, ProcessedEvent
+
+
+def _make_order(db, **overrides) -> Order:
+    """Create and persist a minimal Order, returning the committed instance."""
+    defaults = {
+        "customer_id": uuid.uuid4(),
+        "restaurant_id": uuid.uuid4(),
+        "total_amount": 49.99,
+        "delivery_address": "123 Main St",
+    }
+    defaults.update(overrides)
+    order = Order(**defaults)
+    db.add(order)
+    db.commit()
+    return order
 
 
 def test_create_order(db):
     """An order can be inserted and queried."""
-    order = Order(
-        customer_id=uuid.uuid4(),
-        restaurant_id=uuid.uuid4(),
-        total_amount=49.99,
-        delivery_address="123 Main St",
-    )
-    db.add(order)
-    db.commit()
-
+    order = _make_order(db)
     result = db.query(Order).first()
     assert result is not None
     assert result.status == "PENDING"
-    assert result.total_amount == 49.99
+    assert result.total_amount == order.total_amount
 
 
-def test_order_deleted_at_defaults_to_none(db):
-    """Order.deleted_at defaults to None (Tombstone pattern foundation)."""
-    order = Order(
-        customer_id=uuid.uuid4(),
-        restaurant_id=uuid.uuid4(),
-        total_amount=10.0,
-        delivery_address="456 Elm St",
-    )
-    db.add(order)
+def test_order_tombstone_created(db):
+    """Creating an OrderTombstone marks an order as logically deleted."""
+    order = _make_order(db)
+
+    tombstone = OrderTombstone(order_id=order.id)
+    db.add(tombstone)
     db.commit()
 
-    result = db.query(Order).first()
-    assert result.deleted_at is None
+    db.refresh(order)
+    assert order.tombstone is not None
+    assert order.tombstone.order_id == order.id
+    assert order.tombstone.tombstoned_at is not None
+
+
+def test_order_tombstone_is_insert_only(db):
+    """Creating a tombstone does NOT modify the original order row."""
+    order = _make_order(db)
+    original_status = order.status
+    original_total = order.total_amount
+    original_address = order.delivery_address
+    original_updated_at = order.updated_at
+
+    tombstone = OrderTombstone(order_id=order.id)
+    db.add(tombstone)
+    db.commit()
+
+    db.expire(order)
+    db.refresh(order)
+    assert order.status == original_status
+    assert order.total_amount == original_total
+    assert order.delivery_address == original_address
+    assert order.updated_at == original_updated_at
+
+
+def test_tombstone_unique_constraint(db):
+    """Only one tombstone can exist per order."""
+    order = _make_order(db)
+
+    db.add(OrderTombstone(order_id=order.id))
+    db.commit()
+
+    db.add(OrderTombstone(order_id=order.id))
+    with pytest.raises(IntegrityError):
+        db.commit()
 
 
 def test_create_order_item_linked_to_order(db):

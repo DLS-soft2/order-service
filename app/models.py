@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, JSON, Uuid, Index
+from sqlalchemy import (
+    Column, String, Float, Integer, DateTime, ForeignKey, JSON, Uuid, Index, UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -26,10 +28,10 @@ class Order(Base):
     updated_at = Column(
         DateTime(timezone=True), default=_utc_now, onupdate=_utc_now, nullable=False,
     )
-    deleted_at = Column(DateTime(timezone=True), nullable=True, default=None)
 
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
     snapshots = relationship("OrderSnapshot", back_populates="order", cascade="all, delete-orphan")
+    tombstone = relationship("OrderTombstone", uselist=False, back_populates="order")
 
     __table_args__ = (
         Index("ix_orders_status", "status"),
@@ -63,6 +65,29 @@ class OrderSnapshot(Base):
     created_at = Column(DateTime(timezone=True), default=_utc_now, nullable=False)
 
     order = relationship("Order", back_populates="snapshots")
+
+
+class OrderTombstone(Base):
+    """Immutable deletion marker for an order (tombstone pattern).
+
+    Records that an order has been logically deleted without modifying or
+    removing the original order row.  Reads LEFT JOIN against this table
+    to filter out tombstoned orders.
+    """
+
+    __tablename__ = "order_tombstones"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    order_id = Column(
+        Uuid(as_uuid=True), ForeignKey("orders.id"), nullable=False,
+    )
+    tombstoned_at = Column(DateTime(timezone=True), default=_utc_now, nullable=False)
+
+    order = relationship("Order", back_populates="tombstone")
+
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_order_tombstones_order_id"),
+    )
 
 
 class ProcessedEvent(Base):

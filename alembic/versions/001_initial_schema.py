@@ -26,7 +26,6 @@ def upgrade() -> None:
         sa.Column("delivery_address", sa.String(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("ix_orders_customer_id", "orders", ["customer_id"])
     op.create_index("ix_orders_status", "orders", ["status"])
