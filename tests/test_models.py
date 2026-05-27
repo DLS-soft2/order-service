@@ -1,7 +1,7 @@
 import uuid
 import pytest
 from sqlalchemy.exc import IntegrityError
-from app.models import Order, OrderItem, OrderSnapshot, OrderTombstone, ProcessedEvent
+from app.db.tables import Order, OrderItem, OrderSnapshot, OrderTombstone, ProcessedEvent
 
 
 def _make_order(db, **overrides) -> Order:

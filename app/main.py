@@ -3,7 +3,8 @@ from fastapi import FastAPI
 from app.config import settings
 from app import database
 from app.database import Base
-from app import models  # pylint: disable=unused-import  # registers ORM models with Base.metadata
+from app.db import tables  # pylint: disable=unused-import  # registers ORM models with Base.metadata
+from app.api import orders
 
 
 @asynccontextmanager
@@ -19,6 +20,8 @@ app = FastAPI(
     version=settings.service_version,
     lifespan=lifespan,
 )
+
+app.include_router(orders.router)
 
 
 @app.get("/")
