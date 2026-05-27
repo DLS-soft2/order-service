@@ -1,7 +1,36 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from app.config import settings
+from app import database
+from app.database import Base
+from app import models  # pylint: disable=unused-import  # registers ORM models with Base.metadata
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Create database tables on startup."""
+    Base.metadata.create_all(bind=database.engine)
+    yield
+
+
+app = FastAPI(
+    title="Order Service",
+    description="Saga state holder for the DLS-2 food delivery platform",
+    version=settings.service_version,
+    lifespan=lifespan,
+)
+
 
 @app.get("/")
-def read_root():
-    return {"message": "Hello, FastAPI with Poetry!"}
+def root():
+    """Service info endpoint."""
+    return {
+        "service": settings.service_name,
+        "version": settings.service_version,
+    }
+
+
+@app.get("/health")
+def health():
+    """Health check for monitoring and container orchestration."""
+    return {"status": "healthy"}
