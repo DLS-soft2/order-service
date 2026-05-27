@@ -21,10 +21,11 @@ TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 @pytest.fixture(autouse=True)
 def _mock_kafka():
-    """Disable Kafka producer lifecycle and publish_event in all tests."""
+    """Disable Kafka producer/consumer lifecycle and publish_event in all tests."""
     with (
         patch("app.main.start_producer", new_callable=AsyncMock),
         patch("app.main.stop_producer", new_callable=AsyncMock),
+        patch("app.main.start_consumer", new_callable=AsyncMock),
         patch("app.service.order_service.publish_event", new_callable=AsyncMock),
     ):
         yield

@@ -1,22 +1,20 @@
-"""Kafka producer for the Order Service.
-
-Sends order lifecycle events to the 'orders' topic.
-Other services (Payment, Restaurant, Notification) consume
-these events to react to order state changes.
-
-The producer is started once during app startup (in main.py's
-lifespan) and reused for all messages.
-"""
-
 import asyncio
 import json
 import logging
-
 from aiokafka import AIOKafkaProducer
-
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# Kafka producer for the Order Service.
+
+# Sends order lifecycle events to the 'orders' topic.
+# Other services (Payment, Restaurant, Notification) consume
+# these events to react to order state changes.
+
+# The producer is started once during app startup (in main.py's
+# lifespan) and reused for all messages.
+
 
 # Module-level reference — set during app startup, used everywhere
 producer: AIOKafkaProducer | None = None  # pylint: disable=invalid-name
