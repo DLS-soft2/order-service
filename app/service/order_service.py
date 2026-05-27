@@ -1,14 +1,19 @@
+from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy.orm import Session, joinedload
+from app.config import settings
 from app.db.tables import Order, OrderItem, OrderSnapshot, OrderTombstone
+from app.kafka.producer import publish_event
+from app.models.events import OrderCreated
 from app.models.orders import OrderCreate
 
 
-def create_order(data: OrderCreate, db: Session) -> Order:
-    """Create a new order with items.
+async def create_order(data: OrderCreate, db: Session) -> Order:
+    """Create a new order with items and publish an OrderCreated event.
 
     Computes total_amount from items, persists Order + OrderItems,
-    creates an initial OrderSnapshot capturing the PENDING state.
+    creates an initial OrderSnapshot capturing the PENDING state,
+    then publishes an OrderCreated event to Kafka.
     """
     total_amount = sum(item.quantity * item.unit_price for item in data.items)
 
@@ -45,6 +50,20 @@ def create_order(data: OrderCreate, db: Session) -> Order:
     db.add(snapshot)
     db.commit()
     db.refresh(order)
+
+    event = OrderCreated(
+        order_id=order.id,
+        customer_id=order.customer_id,
+        restaurant_id=order.restaurant_id,
+        amount=order.total_amount,
+        delivery_address=order.delivery_address,
+        timestamp=datetime.now(timezone.utc),
+    )
+    await publish_event(
+        topic=settings.kafka_topic_orders,
+        event_data=event.model_dump(mode="json"),
+        key=str(order.id),
+    )
 
     return order
 

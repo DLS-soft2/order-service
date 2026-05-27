@@ -10,9 +10,9 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 
 @router.post("/", response_model=OrderResponse, status_code=201)
-def create_order(body: OrderCreate, db: Session = Depends(get_db)) -> Order:
+async def create_order(body: OrderCreate, db: Session = Depends(get_db)) -> Order:
     """Create a new order with items."""
-    return order_service.create_order(body, db)
+    return await order_service.create_order(body, db)
 
 
 @router.get("/{order_id}", response_model=OrderResponse)

@@ -1,17 +1,29 @@
+import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+
 from app.config import settings
 from app import database
 from app.database import Base
 from app.db import tables  # pylint: disable=unused-import  # registers ORM models with Base.metadata
 from app.api import orders
+from app.kafka.producer import start_producer, stop_producer
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Create database tables on startup."""
+    """Create database tables, start Kafka producer on startup; stop on shutdown."""
     Base.metadata.create_all(bind=database.engine)
+
+    await start_producer()
+
     yield
+
+    await stop_producer()
+    logger.info("Shutdown complete")
 
 
 app = FastAPI(

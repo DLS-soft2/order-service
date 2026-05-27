@@ -1,8 +1,11 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
 from app import database
 from app.database import Base, get_db
 from app.main import app
@@ -14,6 +17,17 @@ test_engine = create_engine(
     poolclass=StaticPool,
 )
 TestSession = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+
+@pytest.fixture(autouse=True)
+def _mock_kafka():
+    """Disable Kafka producer lifecycle and publish_event in all tests."""
+    with (
+        patch("app.main.start_producer", new_callable=AsyncMock),
+        patch("app.main.stop_producer", new_callable=AsyncMock),
+        patch("app.service.order_service.publish_event", new_callable=AsyncMock),
+    ):
+        yield
 
 
 @pytest.fixture(name="db")

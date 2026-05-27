@@ -1,10 +1,11 @@
 """Tests for Order Service REST API endpoints.
 
 Covers create, get, list with pagination, validation,
-and tombstone-pattern filtering.
+tombstone-pattern filtering, and Kafka event publishing.
 """
 
 import uuid
+from unittest.mock import AsyncMock, patch
 
 from app.db.tables import OrderSnapshot, OrderTombstone
 
@@ -162,3 +163,19 @@ def test_tombstoned_order_excluded_from_list(client, db):
     data = response.json()
     assert len(data) == 1
     assert data[0]["id"] == surviving_order_id
+
+
+@patch("app.service.order_service.publish_event", new_callable=AsyncMock)
+def test_create_order_publishes_event(mock_publish, client):
+    """POST /api/v1/orders/ publishes an OrderCreated event via Kafka."""
+    payload = _order_payload()
+    response = client.post("/api/v1/orders/", json=payload)
+
+    assert response.status_code == 201
+    mock_publish.assert_called_once()
+    call_kwargs = mock_publish.call_args.kwargs
+    assert call_kwargs["topic"] == "orders"
+    assert call_kwargs["key"] == response.json()["id"]
+    event_data = call_kwargs["event_data"]
+    assert event_data["event_type"] == "OrderCreated"
+    assert event_data["order_id"] == response.json()["id"]
