@@ -179,3 +179,80 @@ def test_create_order_publishes_event(mock_publish, client):
     event_data = call_kwargs["event_data"]
     assert event_data["event_type"] == "OrderCreated"
     assert event_data["order_id"] == response.json()["id"]
+
+
+# --- Tombstone endpoint tests ---
+
+
+def test_tombstone_order_returns_204(client):
+    """DELETE /api/v1/orders/{id} tombstones the order and returns 204."""
+    create_resp = client.post("/api/v1/orders/", json=_order_payload())
+    order_id = create_resp.json()["id"]
+
+    response = client.delete(f"/api/v1/orders/{order_id}")
+    assert response.status_code == 204
+
+
+def test_tombstoned_order_returns_404_on_get(client):
+    """GET /api/v1/orders/{id} returns 404 after tombstoning via DELETE."""
+    create_resp = client.post("/api/v1/orders/", json=_order_payload())
+    order_id = create_resp.json()["id"]
+
+    client.delete(f"/api/v1/orders/{order_id}")
+    response = client.get(f"/api/v1/orders/{order_id}")
+    assert response.status_code == 404
+
+
+def test_tombstoned_order_excluded_from_list_via_endpoint(client):
+    """GET /api/v1/orders/ excludes orders tombstoned via DELETE endpoint."""
+    resp1 = client.post("/api/v1/orders/", json=_order_payload())
+    resp2 = client.post("/api/v1/orders/", json=_order_payload())
+    tombstoned_id = resp1.json()["id"]
+    surviving_id = resp2.json()["id"]
+
+    client.delete(f"/api/v1/orders/{tombstoned_id}")
+
+    response = client.get("/api/v1/orders/")
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == surviving_id
+
+
+def test_tombstone_already_tombstoned_returns_404(client):
+    """DELETE on an already-tombstoned order returns 404."""
+    create_resp = client.post("/api/v1/orders/", json=_order_payload())
+    order_id = create_resp.json()["id"]
+
+    assert client.delete(f"/api/v1/orders/{order_id}").status_code == 204
+    assert client.delete(f"/api/v1/orders/{order_id}").status_code == 404
+
+
+def test_tombstone_nonexistent_order_returns_404(client):
+    """DELETE on a non-existent order returns 404."""
+    fake_id = uuid.uuid4()
+    response = client.delete(f"/api/v1/orders/{fake_id}")
+    assert response.status_code == 404
+
+
+# --- Snapshot endpoint tests ---
+
+
+def test_snapshot_endpoint_returns_initial_snapshot(client):
+    """GET /api/v1/orders/{id}/snapshots returns the PENDING snapshot after creation."""
+    create_resp = client.post("/api/v1/orders/", json=_order_payload())
+    order_id = create_resp.json()["id"]
+
+    response = client.get(f"/api/v1/orders/{order_id}/snapshots")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["order_id"] == order_id
+    assert data[0]["status"] == "PENDING"
+    assert "total_amount" in data[0]["snapshot_data"]
+
+
+def test_snapshot_endpoint_nonexistent_order_returns_404(client):
+    """GET /api/v1/orders/{id}/snapshots returns 404 for a non-existent order."""
+    fake_id = uuid.uuid4()
+    response = client.get(f"/api/v1/orders/{fake_id}/snapshots")
+    assert response.status_code == 404

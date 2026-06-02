@@ -98,3 +98,42 @@ def list_orders(skip: int, limit: int, db: Session) -> list[Order]:
         .limit(limit)
         .all()
     )
+
+
+def tombstone_order(order_id: UUID, db: Session) -> bool:
+    """Mark an order as deleted by inserting into order_tombstones (tombstone pattern).
+
+    The original order row is never modified or removed.
+    Returns True on success. Raises ValueError if the order does not
+    exist or is already tombstoned.
+    """
+    order = (
+        db.query(Order)
+        .outerjoin(OrderTombstone, Order.id == OrderTombstone.order_id)
+        .filter(Order.id == order_id, OrderTombstone.order_id.is_(None))
+        .first()
+    )
+    if not order:
+        raise ValueError("Order not found or already tombstoned")
+
+    tombstone = OrderTombstone(order_id=order_id)
+    db.add(tombstone)
+    db.commit()
+    return True
+
+
+def get_order_snapshots(order_id: UUID, db: Session) -> list[OrderSnapshot]:
+    """Return all snapshots for an order, ordered by created_at ascending.
+
+    Raises ValueError if the order does not exist.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise ValueError("Order not found")
+
+    return (
+        db.query(OrderSnapshot)
+        .filter(OrderSnapshot.order_id == order_id)
+        .order_by(OrderSnapshot.created_at.asc())
+        .all()
+    )

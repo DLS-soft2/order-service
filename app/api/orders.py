@@ -1,9 +1,9 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.db.tables import Order
-from app.models.orders import OrderCreate, OrderResponse
+from app.db.tables import Order, OrderSnapshot
+from app.models.orders import OrderCreate, OrderResponse, OrderSnapshotResponse
 from app.service import order_service
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
@@ -32,3 +32,25 @@ def list_orders(
 ) -> list[Order]:
     """List orders with pagination, excluding tombstoned orders."""
     return order_service.list_orders(skip, limit, db)
+
+
+@router.delete("/{order_id}", status_code=204, response_class=Response)
+def delete_order(order_id: UUID, db: Session = Depends(get_db)) -> None:
+    """Tombstone an order (immutable deletion marker). Original row is not modified."""
+    try:
+        order_service.tombstone_order(order_id, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{order_id}/snapshots", response_model=list[OrderSnapshotResponse],
+)
+def get_order_snapshots(
+    order_id: UUID, db: Session = Depends(get_db),
+) -> list[OrderSnapshot]:
+    """Return the full snapshot history for an order (Snapshot pattern)."""
+    try:
+        return order_service.get_order_snapshots(order_id, db)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

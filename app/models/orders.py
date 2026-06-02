@@ -69,3 +69,15 @@ class OrderResponse(BaseModel):
     items: list[OrderItemResponse]
     created_at: datetime
     updated_at: datetime
+
+
+class OrderSnapshotResponse(BaseModel):
+    """Read model for an immutable order snapshot (Snapshot pattern)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    order_id: UUID
+    status: str
+    snapshot_data: dict
+    created_at: datetime
