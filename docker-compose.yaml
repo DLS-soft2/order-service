@@ -1,0 +1,46 @@
+# Docker Compose for local development of Order Service.
+#
+# NOTE: Kafka runs in the infra repo — start it first:
+#   cd ../infra/docker && docker compose -f docker-compose.kafka.yaml up -d
+#
+# Then start this service:
+#   docker compose up --build
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: order
+      POSTGRES_PASSWORD: order
+      POSTGRES_DB: order_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - order_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U order -d order_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  order-service:
+    build: .
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://order:order@postgres:5432/order_db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+      - docker_default
+
+volumes:
+  order_pgdata:
+
+networks:
+  docker_default:
+    external: true
