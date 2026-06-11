@@ -17,6 +17,15 @@ async def create_order(body: OrderCreate, db: Session = Depends(get_db)) -> Orde
     return await order_service.create_order(body, db)
 
 
+@router.get("/customer/{customer_id}", response_model=list[OrderResponse])
+@require_permission(Permission.ORDERS_READ)
+def list_orders_by_customer(
+    customer_id: UUID, db: Session = Depends(get_db),
+) -> list[Order]:
+    """List all orders for a specific customer, excluding tombstoned orders."""
+    return order_service.list_orders_by_customer(customer_id, db)
+
+
 @router.get("/{order_id}", response_model=OrderResponse)
 @require_permission(Permission.ORDERS_READ)
 def get_order(order_id: UUID, db: Session = Depends(get_db)) -> Order:

@@ -122,6 +122,21 @@ def tombstone_order(order_id: UUID, db: Session) -> bool:
     return True
 
 
+def list_orders_by_customer(customer_id: UUID, db: Session) -> list[Order]:
+    """List all orders for a specific customer, excluding tombstoned orders.
+
+    Uses LEFT JOIN against order_tombstones to filter out
+    logically deleted orders (tombstone pattern).
+    """
+    return (
+        db.query(Order)
+        .outerjoin(OrderTombstone, Order.id == OrderTombstone.order_id)
+        .filter(Order.customer_id == customer_id, OrderTombstone.order_id.is_(None))
+        .options(joinedload(Order.items))
+        .all()
+    )
+
+
 def get_order_snapshots(order_id: UUID, db: Session) -> list[OrderSnapshot]:
     """Return all snapshots for an order, ordered by created_at ascending.
 

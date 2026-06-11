@@ -122,6 +122,54 @@ def test_list_orders_pagination(client):
     assert len(response.json()) == 1
 
 
+def test_list_orders_by_customer_filters_correctly(client):
+    """GET /api/v1/orders/customer/{id} returns only that customer's orders."""
+    customer_a = str(uuid.uuid4())
+    customer_b = str(uuid.uuid4())
+
+    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_a), headers=AUTH_HEADERS)
+    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_a), headers=AUTH_HEADERS)
+    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_b), headers=AUTH_HEADERS)
+
+    response = client.get(f"/api/v1/orders/customer/{customer_a}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert all(o["customer_id"] == customer_a for o in data)
+
+    response = client.get(f"/api/v1/orders/customer/{customer_b}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["customer_id"] == customer_b
+
+
+def test_list_orders_by_customer_excludes_tombstoned(client, db):
+    """GET /api/v1/orders/customer/{id} excludes tombstoned orders."""
+    customer_id = str(uuid.uuid4())
+    resp1 = client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_id), headers=AUTH_HEADERS)
+    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_id), headers=AUTH_HEADERS)
+
+    order_to_tombstone = resp1.json()["id"]
+    tombstone = OrderTombstone(order_id=uuid.UUID(order_to_tombstone))
+    db.add(tombstone)
+    db.commit()
+
+    response = client.get(f"/api/v1/orders/customer/{customer_id}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] != order_to_tombstone
+
+
+def test_list_orders_by_customer_empty(client):
+    """GET /api/v1/orders/customer/{id} returns empty list for unknown customer."""
+    unknown = uuid.uuid4()
+    response = client.get(f"/api/v1/orders/customer/{unknown}", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_tombstoned_order_excluded_from_get_by_id(client, db):
     """GET /api/v1/orders/{id} returns 404 for a tombstoned order."""
     create_resp = client.post("/api/v1/orders/", json=_order_payload(), headers=AUTH_HEADERS)
