@@ -1,6 +1,7 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
+from auth_lib import require_permission, Permission
 from app.database import get_db
 from app.db.tables import Order, OrderSnapshot
 from app.models.orders import OrderCreate, OrderResponse, OrderSnapshotResponse
@@ -10,12 +11,14 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 
 @router.post("/", response_model=OrderResponse, status_code=201)
+@require_permission(Permission.ORDERS_CREATE)
 async def create_order(body: OrderCreate, db: Session = Depends(get_db)) -> Order:
     """Create a new order with items."""
     return await order_service.create_order(body, db)
 
 
 @router.get("/{order_id}", response_model=OrderResponse)
+@require_permission(Permission.ORDERS_READ)
 def get_order(order_id: UUID, db: Session = Depends(get_db)) -> Order:
     """Get a single order by ID. Returns 404 if not found or tombstoned."""
     order = order_service.get_order(order_id, db)
@@ -25,6 +28,7 @@ def get_order(order_id: UUID, db: Session = Depends(get_db)) -> Order:
 
 
 @router.get("/", response_model=list[OrderResponse])
+@require_permission(Permission.ORDERS_READ)
 def list_orders(
     skip: int = 0,
     limit: int = 20,
@@ -35,6 +39,7 @@ def list_orders(
 
 
 @router.delete("/{order_id}", status_code=204, response_class=Response)
+@require_permission(Permission.ORDERS_CREATE)
 def delete_order(order_id: UUID, db: Session = Depends(get_db)) -> None:
     """Tombstone an order (immutable deletion marker). Original row is not modified."""
     try:
@@ -46,6 +51,7 @@ def delete_order(order_id: UUID, db: Session = Depends(get_db)) -> None:
 @router.get(
     "/{order_id}/snapshots", response_model=list[OrderSnapshotResponse],
 )
+@require_permission(Permission.ORDERS_READ)
 def get_order_snapshots(
     order_id: UUID, db: Session = Depends(get_db),
 ) -> list[OrderSnapshot]:

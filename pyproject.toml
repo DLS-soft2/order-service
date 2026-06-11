@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "order-service"
-version = "1.0.1"
+version = "1.1.0"
 description = "A FastAPI project template managed with Poetry"
 authors = ["Your Name <you@example.com>"]
 license = ""
@@ -16,6 +16,7 @@ psycopg2-binary = "^2.9.11"
 pydantic-settings = "^2.13.1"
 aiokafka = "^0.13.0"
 alembic = "^1.15.0"
+auth-lib-python = { git = "https://github.com/DLS-soft2/auth-lib-python", tag = "1.0.0" }
 
 [build-system]
 requires = ["poetry-core"]
