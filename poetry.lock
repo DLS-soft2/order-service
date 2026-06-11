@@ -129,6 +129,26 @@ files = [
 ]
 
 [[package]]
+name = "auth-lib-python"
+version = "1.0.0"
+description = "Shared RBAC library for DLS-2 Python services"
+optional = false
+python-versions = "^3.12"
+groups = ["main"]
+files = []
+develop = false
+
+[package.dependencies]
+fastapi = ">=0.100.0"
+pydantic = ">=2.0"
+
+[package.source]
+type = "git"
+url = "https://github.com/DLS-soft2/auth-lib-python"
+reference = "1.0.0"
+resolved_reference = "635bb2867bee51234b1f588e782ea8ed567c0830"
+
+[[package]]
 name = "certifi"
 version = "2026.5.20"
 description = "Python package for providing Mozilla's CA Bundle."
@@ -1503,4 +1523,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "fe620e2be6b8e64228126741bcf1d3edb3821eae792bf3e4b3cbd828ffcf8a30"
+content-hash = "d7075cd2a025889a723417496d2b368b3105d899a90702714ccc0b9b59235bbb"
