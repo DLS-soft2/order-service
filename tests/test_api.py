@@ -3,14 +3,12 @@ from unittest.mock import AsyncMock, patch
 
 from app.db.tables import OrderSnapshot, OrderTombstone
 
-AUTH_HEADERS = {"x-user-id": "test-user", "x-user-roles": "customer"}
-ADMIN_HEADERS = {"x-user-id": "test-admin", "x-user-roles": "admin"}
+AUTH_HEADERS = {"x-user-id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "x-user-roles": "customer"}
 
 
 def _order_payload(**overrides) -> dict:
     """Build a valid OrderCreate request body with optional overrides."""
     defaults = {
-        "customer_id": str(uuid.uuid4()),
         "restaurant_id": str(uuid.uuid4()),
         "delivery_address": "123 Test St",
         "items": [
@@ -38,7 +36,7 @@ def test_create_order(client):
     assert data["delivery_address"] == "123 Test St"
     assert len(data["items"]) == 1
     assert data["items"][0]["name"] == "Margherita Pizza"
-    assert data["customer_id"] == payload["customer_id"]
+    assert data["customer_id"] == AUTH_HEADERS["x-user-id"]
     assert data["restaurant_id"] == payload["restaurant_id"]
 
 
@@ -59,6 +57,19 @@ def test_create_order_validates_items_not_empty(client):
     payload = _order_payload(items=[])
     response = client.post("/api/v1/orders/", json=payload, headers=AUTH_HEADERS)
     assert response.status_code == 422
+
+
+def test_create_order_missing_user_header(client):
+    """POST returns 401 when x-user-id header is absent."""
+    response = client.post("/api/v1/orders/", json=_order_payload(), headers={"x-user-roles": "customer"})
+    assert response.status_code == 401
+
+
+def test_create_order_invalid_user_header(client):
+    """POST returns 400 when x-user-id header is not a valid UUID."""
+    headers = {"x-user-id": "not-a-uuid", "x-user-roles": "customer"}
+    response = client.post("/api/v1/orders/", json=_order_payload(), headers=headers)
+    assert response.status_code == 400
 
 
 def test_create_order_creates_initial_snapshot(client, db):
@@ -126,10 +137,12 @@ def test_list_orders_by_customer_filters_correctly(client):
     """GET /api/v1/orders/customer/{id} returns only that customer's orders."""
     customer_a = str(uuid.uuid4())
     customer_b = str(uuid.uuid4())
+    headers_a = {"x-user-id": customer_a, "x-user-roles": "customer"}
+    headers_b = {"x-user-id": customer_b, "x-user-roles": "customer"}
 
-    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_a), headers=AUTH_HEADERS)
-    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_a), headers=AUTH_HEADERS)
-    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_b), headers=AUTH_HEADERS)
+    client.post("/api/v1/orders/", json=_order_payload(), headers=headers_a)
+    client.post("/api/v1/orders/", json=_order_payload(), headers=headers_a)
+    client.post("/api/v1/orders/", json=_order_payload(), headers=headers_b)
 
     response = client.get(f"/api/v1/orders/customer/{customer_a}", headers=AUTH_HEADERS)
     assert response.status_code == 200
@@ -147,8 +160,9 @@ def test_list_orders_by_customer_filters_correctly(client):
 def test_list_orders_by_customer_excludes_tombstoned(client, db):
     """GET /api/v1/orders/customer/{id} excludes tombstoned orders."""
     customer_id = str(uuid.uuid4())
-    resp1 = client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_id), headers=AUTH_HEADERS)
-    client.post("/api/v1/orders/", json=_order_payload(customer_id=customer_id), headers=AUTH_HEADERS)
+    headers = {"x-user-id": customer_id, "x-user-roles": "customer"}
+    resp1 = client.post("/api/v1/orders/", json=_order_payload(), headers=headers)
+    client.post("/api/v1/orders/", json=_order_payload(), headers=headers)
 
     order_to_tombstone = resp1.json()["id"]
     tombstone = OrderTombstone(order_id=uuid.UUID(order_to_tombstone))

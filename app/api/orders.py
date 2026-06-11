@@ -1,5 +1,5 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from auth_lib import require_permission, Permission
 from app.database import get_db
@@ -12,9 +12,16 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 @router.post("/", response_model=OrderResponse, status_code=201)
 @require_permission(Permission.ORDERS_CREATE)
-async def create_order(body: OrderCreate, db: Session = Depends(get_db)) -> Order:
+async def create_order(body: OrderCreate, request: Request, db: Session = Depends(get_db)) -> Order:
     """Create a new order with items."""
-    return await order_service.create_order(body, db)
+    raw = request.headers.get("x-user-id")
+    if not raw:
+        raise HTTPException(status_code=401, detail="Missing x-user-id header")
+    try:
+        customer_id = UUID(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid x-user-id header") from exc
+    return await order_service.create_order(body, customer_id, db)
 
 
 @router.get("/customer/{customer_id}", response_model=list[OrderResponse])

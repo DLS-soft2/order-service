@@ -23,7 +23,6 @@ class OrderItemCreate(BaseModel):
 class OrderCreate(BaseModel):
     """Input schema for creating an order (write model)."""
 
-    customer_id: UUID
     restaurant_id: UUID
     delivery_address: str
     items: list[OrderItemCreate]

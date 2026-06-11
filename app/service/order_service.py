@@ -8,7 +8,7 @@ from app.models.events import OrderCreated
 from app.models.orders import OrderCreate
 
 
-async def create_order(data: OrderCreate, db: Session) -> Order:
+async def create_order(data: OrderCreate, customer_id: UUID, db: Session) -> Order:
     """Create a new order with items and publish an OrderCreated event.
 
     Computes total_amount from items, persists Order + OrderItems,
@@ -18,7 +18,7 @@ async def create_order(data: OrderCreate, db: Session) -> Order:
     total_amount = sum(item.quantity * item.unit_price for item in data.items)
 
     order = Order(
-        customer_id=data.customer_id,
+        customer_id=customer_id,
         restaurant_id=data.restaurant_id,
         delivery_address=data.delivery_address,
         total_amount=total_amount,
