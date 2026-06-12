@@ -17,6 +17,7 @@ pydantic-settings = "^2.13.1"
 aiokafka = "^0.13.0"
 alembic = "^1.15.0"
 auth-lib-python = { git = "https://github.com/DLS-soft2/auth-lib-python", tag = "1.0.0" }
+prometheus-fastapi-instrumentator = "^7.1.0"
 
 [build-system]
 requires = ["poetry-core"]
