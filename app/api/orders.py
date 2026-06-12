@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from auth_lib import require_permission, Permission
 from app.database import get_db
-from app.db.tables import Order, OrderSnapshot
+from app.db.tables import Order, OrderReadView, OrderSnapshot
 from app.models.orders import OrderCreate, OrderResponse, OrderSnapshotResponse
 from app.service import order_service
 
@@ -27,15 +27,18 @@ async def create_order(body: OrderCreate, request: Request, db: Session = Depend
 @router.get("/customer/{customer_id}", response_model=list[OrderResponse])
 @require_permission(Permission.ORDERS_READ)
 def list_orders_by_customer(
-    customer_id: UUID, db: Session = Depends(get_db),
-) -> list[Order]:
+    customer_id: UUID,
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+) -> list[OrderReadView]:
     """List all orders for a specific customer, excluding tombstoned orders."""
-    return order_service.list_orders_by_customer(customer_id, db)
+    return order_service.list_orders_by_customer(customer_id, skip, limit, db)
 
 
 @router.get("/{order_id}", response_model=OrderResponse)
 @require_permission(Permission.ORDERS_READ)
-def get_order(order_id: UUID, db: Session = Depends(get_db)) -> Order:
+def get_order(order_id: UUID, db: Session = Depends(get_db)) -> OrderReadView:
     """Get a single order by ID. Returns 404 if not found or tombstoned."""
     order = order_service.get_order(order_id, db)
     if not order:
@@ -49,7 +52,7 @@ def list_orders(
     skip: int = 0,
     limit: int = 20,
     db: Session = Depends(get_db),
-) -> list[Order]:
+) -> list[OrderReadView]:
     """List orders with pagination, excluding tombstoned orders."""
     return order_service.list_orders(skip, limit, db)
 

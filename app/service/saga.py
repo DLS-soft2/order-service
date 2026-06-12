@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
-from app.db.tables import Order, OrderSnapshot
+from app.db.tables import Order, OrderReadView, OrderSnapshot
 
 
 # Saga transition logic for order status management.
@@ -67,6 +67,10 @@ def apply_transition(order: Order, target_status: str, db: Session) -> bool:
 
     order.status = target_status
     order.updated_at = datetime.now(timezone.utc)
+
+    read_view = db.query(OrderReadView).filter(OrderReadView.id == order.id).one()
+    read_view.status = target_status
+    read_view.updated_at = order.updated_at
 
     snapshot = OrderSnapshot(
         order_id=order.id,

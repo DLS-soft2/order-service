@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, Float, Integer, DateTime, ForeignKey, JSON, Uuid, Index, UniqueConstraint,
+    Numeric,
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -87,6 +88,29 @@ class OrderTombstone(Base):
 
     __table_args__ = (
         UniqueConstraint("order_id", name="uq_order_tombstones_order_id"),
+    )
+
+
+class OrderReadView(Base):
+    """Read projection for order query paths."""
+
+    __tablename__ = "order_read_view"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True)
+    customer_id = Column(Uuid(as_uuid=True), nullable=False, index=True)
+    restaurant_id = Column(Uuid(as_uuid=True), nullable=False)
+    status = Column(String, nullable=False, index=True)
+    total_amount = Column(Numeric, nullable=False)
+    delivery_address = Column(String, nullable=False)
+    items = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utc_now, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True), default=_utc_now, onupdate=_utc_now, nullable=False,
+    )
+    tombstoned_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_order_read_view_customer_status", "customer_id", "status"),
     )
 
 

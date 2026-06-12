@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
-from app.db.tables import OrderSnapshot, OrderTombstone
+from app.db.tables import Order, OrderReadView, OrderSnapshot, OrderTombstone
 
 AUTH_HEADERS = {"x-user-id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "x-user-roles": "customer"}
 
@@ -22,6 +23,11 @@ def _order_payload(**overrides) -> dict:
     }
     defaults.update(overrides)
     return defaults
+
+
+def _tombstone_read_view(order_id: uuid.UUID, db) -> None:
+    read_view = db.query(OrderReadView).filter_by(id=order_id).one()
+    read_view.tombstoned_at = datetime.now(timezone.utc)
 
 
 def test_create_order(client):
@@ -84,6 +90,33 @@ def test_create_order_creates_initial_snapshot(client, db):
     assert snapshot.snapshot_data["total_amount"] == response.json()["total_amount"]
 
 
+def test_create_order_creates_read_projection(client, db):
+    """POST creates an OrderReadView row with serialized item data."""
+    payload = _order_payload()
+    response = client.post("/api/v1/orders/", json=payload, headers=AUTH_HEADERS)
+    order_id = uuid.UUID(response.json()["id"])
+
+    read_views = db.query(OrderReadView).all()
+    assert len(read_views) == 1
+    read_view = read_views[0]
+    assert read_view.id == order_id
+    assert str(read_view.customer_id) == AUTH_HEADERS["x-user-id"]
+    assert str(read_view.restaurant_id) == payload["restaurant_id"]
+    assert read_view.status == "PENDING"
+    assert float(read_view.total_amount) == response.json()["total_amount"]
+    assert read_view.delivery_address == payload["delivery_address"]
+    assert read_view.tombstoned_at is None
+    assert read_view.items == [
+        {
+            "id": response.json()["items"][0]["id"],
+            "menu_item_id": payload["items"][0]["menu_item_id"],
+            "name": payload["items"][0]["name"],
+            "quantity": payload["items"][0]["quantity"],
+            "unit_price": payload["items"][0]["unit_price"],
+        }
+    ]
+
+
 def test_get_order_by_id(client):
     """GET /api/v1/orders/{id} returns the order with nested items."""
     payload = _order_payload()
@@ -95,6 +128,34 @@ def test_get_order_by_id(client):
     data = response.json()
     assert data["id"] == order_id
     assert len(data["items"]) == 1
+    assert data["items"][0]["menu_item_id"] == payload["items"][0]["menu_item_id"]
+    assert data["items"][0]["name"] == payload["items"][0]["name"]
+    assert data["items"][0]["quantity"] == payload["items"][0]["quantity"]
+    assert data["items"][0]["unit_price"] == payload["items"][0]["unit_price"]
+
+
+def test_get_order_ignores_write_table_without_read_projection(client, db):
+    """GET and list endpoints ignore orders absent from the read projection."""
+    order = Order(
+        customer_id=uuid.UUID(AUTH_HEADERS["x-user-id"]),
+        restaurant_id=uuid.uuid4(),
+        delivery_address="123 Write Table St",
+        total_amount=10.0,
+    )
+    db.add(order)
+    db.commit()
+
+    get_response = client.get(f"/api/v1/orders/{order.id}", headers=AUTH_HEADERS)
+    list_response = client.get("/api/v1/orders/", headers=AUTH_HEADERS)
+    customer_response = client.get(
+        f"/api/v1/orders/customer/{order.customer_id}", headers=AUTH_HEADERS,
+    )
+
+    assert get_response.status_code == 404
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+    assert customer_response.status_code == 200
+    assert customer_response.json() == []
 
 
 def test_get_order_not_found(client):
@@ -167,6 +228,7 @@ def test_list_orders_by_customer_excludes_tombstoned(client, db):
     order_to_tombstone = resp1.json()["id"]
     tombstone = OrderTombstone(order_id=uuid.UUID(order_to_tombstone))
     db.add(tombstone)
+    _tombstone_read_view(uuid.UUID(order_to_tombstone), db)
     db.commit()
 
     response = client.get(f"/api/v1/orders/customer/{customer_id}", headers=AUTH_HEADERS)
@@ -195,6 +257,7 @@ def test_tombstoned_order_excluded_from_get_by_id(client, db):
     # Insert tombstone
     tombstone = OrderTombstone(order_id=uuid.UUID(order_id))
     db.add(tombstone)
+    _tombstone_read_view(uuid.UUID(order_id), db)
     db.commit()
 
     # Order should now be 404
@@ -215,6 +278,7 @@ def test_tombstoned_order_excluded_from_list(client, db):
     # Tombstone the first order
     tombstone = OrderTombstone(order_id=uuid.UUID(order_id_to_tombstone))
     db.add(tombstone)
+    _tombstone_read_view(uuid.UUID(order_id_to_tombstone), db)
     db.commit()
 
     # Only the non-tombstoned order should remain
@@ -250,6 +314,20 @@ def test_tombstone_order_returns_204(client):
 
     response = client.delete(f"/api/v1/orders/{order_id}", headers=AUTH_HEADERS)
     assert response.status_code == 204
+
+
+def test_tombstone_order_updates_read_projection(client, db):
+    """DELETE sets tombstoned_at on the OrderReadView row."""
+    create_resp = client.post("/api/v1/orders/", json=_order_payload(), headers=AUTH_HEADERS)
+    order_id = uuid.UUID(create_resp.json()["id"])
+
+    response = client.delete(f"/api/v1/orders/{order_id}", headers=AUTH_HEADERS)
+
+    read_view = db.query(OrderReadView).filter_by(id=order_id).one()
+    tombstones = db.query(OrderTombstone).filter_by(order_id=order_id).all()
+    assert response.status_code == 204
+    assert len(tombstones) == 1
+    assert read_view.tombstoned_at is not None
 
 
 def test_tombstoned_order_returns_404_on_get(client):

@@ -5,9 +5,10 @@ cancellation, terminal state rejection, regression rejection,
 and commutative (skip-ahead) transitions.
 """
 
+from datetime import datetime, timezone
 import uuid
 
-from app.db.tables import Order, OrderSnapshot
+from app.db.tables import Order, OrderReadView, OrderSnapshot
 from app.service.saga import can_transition, apply_transition
 
 
@@ -66,7 +67,7 @@ def test_pending_to_delivered_allowed_commutative():
 
 
 def _make_order(db, status: str = "PENDING") -> Order:
-    """Create a persisted order with the given status."""
+    """Create a persisted order and matching read projection."""
     order = Order(
         customer_id=uuid.uuid4(),
         restaurant_id=uuid.uuid4(),
@@ -75,17 +76,33 @@ def _make_order(db, status: str = "PENDING") -> Order:
         status=status,
     )
     db.add(order)
+    db.flush()
+    db.add(
+        OrderReadView(
+            id=order.id,
+            customer_id=order.customer_id,
+            restaurant_id=order.restaurant_id,
+            status=order.status,
+            total_amount=order.total_amount,
+            delivery_address=order.delivery_address,
+            items=[],
+            created_at=order.created_at,
+            updated_at=order.updated_at,
+        )
+    )
     db.commit()
     return order
 
 
 def test_apply_transition_updates_status(db):
-    """apply_transition updates order.status to the target status."""
+    """apply_transition updates order and projection status."""
     order = _make_order(db, "PENDING")
     result = apply_transition(order, "PAID", db)
 
+    read_view = db.query(OrderReadView).filter_by(id=order.id).one()
     assert result is True
     assert order.status == "PAID"
+    assert read_view.status == "PAID"
 
 
 def test_apply_transition_creates_snapshot(db):
@@ -103,12 +120,19 @@ def test_apply_transition_rejected_returns_false(db):
     """apply_transition returns False and makes no changes when rejected."""
     order = _make_order(db, "DELIVERED")
     original_updated_at = order.updated_at
+    read_view = db.query(OrderReadView).filter_by(id=order.id).one()
+    read_view.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    db.commit()
+    original_read_view_updated_at = read_view.updated_at
 
     result = apply_transition(order, "PAID", db)
 
+    db.refresh(read_view)
     assert result is False
     assert order.status == "DELIVERED"
     assert order.updated_at == original_updated_at
+    assert read_view.status == "DELIVERED"
+    assert read_view.updated_at == original_read_view_updated_at
     assert db.query(OrderSnapshot).filter_by(order_id=order.id).count() == 0
 
 

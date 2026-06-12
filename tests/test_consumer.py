@@ -6,12 +6,12 @@ and snapshot creation on each consumed event.
 
 import uuid
 
-from app.db.tables import Order, OrderSnapshot, ProcessedEvent
+from app.db.tables import Order, OrderReadView, OrderSnapshot, ProcessedEvent
 from app.kafka.consumer import handle_event, is_event_processed, mark_event_processed
 
 
 def _make_order(db, status: str = "PENDING") -> Order:
-    """Create a persisted order with the given status."""
+    """Create a persisted order and matching read projection."""
     order = Order(
         customer_id=uuid.uuid4(),
         restaurant_id=uuid.uuid4(),
@@ -20,6 +20,20 @@ def _make_order(db, status: str = "PENDING") -> Order:
         status=status,
     )
     db.add(order)
+    db.flush()
+    db.add(
+        OrderReadView(
+            id=order.id,
+            customer_id=order.customer_id,
+            restaurant_id=order.restaurant_id,
+            status=order.status,
+            total_amount=order.total_amount,
+            delivery_address=order.delivery_address,
+            items=[],
+            created_at=order.created_at,
+            updated_at=order.updated_at,
+        )
+    )
     db.commit()
     return order
 
@@ -39,7 +53,10 @@ def test_payment_authorized_transitions_to_paid(db):
     handle_event(event, "payments", db)
 
     db.refresh(order)
+    read_view = db.query(OrderReadView).filter_by(id=order.id).one()
     assert order.status == "PAID"
+    assert read_view.status == "PAID"
+    assert db.query(ProcessedEvent).filter_by(event_id=event["event_id"]).count() == 1
 
 
 def test_duplicate_event_skipped(db):
@@ -59,9 +76,12 @@ def test_duplicate_event_skipped(db):
     handle_event(event, "payments", db)
 
     db.refresh(order)
+    read_view = db.query(OrderReadView).filter_by(id=order.id).one()
     assert order.status == "PAID"
+    assert read_view.status == "PAID"
     snapshots = db.query(OrderSnapshot).filter_by(order_id=order.id).all()
     assert len(snapshots) == 1
+    assert db.query(ProcessedEvent).filter_by(event_id=event_id).count() == 1
 
 
 def test_event_for_nonexistent_order_skipped(db):

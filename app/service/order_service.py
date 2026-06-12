@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from app.config import settings
-from app.db.tables import Order, OrderItem, OrderSnapshot, OrderTombstone
+from app.db.tables import Order, OrderItem, OrderReadView, OrderSnapshot, OrderTombstone
 from app.kafka.producer import publish_event
 from app.models.events import OrderCreated
 from app.models.orders import OrderCreate
@@ -37,6 +37,7 @@ async def create_order(data: OrderCreate, customer_id: UUID, db: Session) -> Ord
         for item in data.items
     ]
     db.add_all(order_items)
+    db.flush()
 
     snapshot = OrderSnapshot(
         order_id=order.id,
@@ -48,6 +49,7 @@ async def create_order(data: OrderCreate, customer_id: UUID, db: Session) -> Ord
         },
     )
     db.add(snapshot)
+    upsert_order_read_view(order, order_items, db)
     db.commit()
     db.refresh(order)
 
@@ -68,32 +70,57 @@ async def create_order(data: OrderCreate, customer_id: UUID, db: Session) -> Ord
     return order
 
 
-def get_order(order_id: UUID, db: Session) -> Order | None:
-    """Fetch an order by ID, excluding tombstoned orders.
+def upsert_order_read_view(order: Order, items: list[OrderItem], db: Session) -> OrderReadView:
+    """Create or update the order read projection from the write model."""
+    item_data = [
+        {
+            "id": str(item.id),
+            "menu_item_id": str(item.menu_item_id),
+            "name": item.name,
+            "quantity": item.quantity,
+            "unit_price": item.unit_price,
+        }
+        for item in items
+    ]
+    read_view = db.query(OrderReadView).filter(OrderReadView.id == order.id).first()
+    if read_view is None:
+        read_view = OrderReadView(id=order.id)
+        db.add(read_view)
 
-    Uses LEFT JOIN against order_tombstones to implement the tombstone pattern.
-    Returns None if the order does not exist or has been tombstoned.
-    """
+    read_view.customer_id = order.customer_id
+    read_view.restaurant_id = order.restaurant_id
+    read_view.status = order.status
+    read_view.total_amount = order.total_amount
+    read_view.delivery_address = order.delivery_address
+    read_view.items = item_data
+    read_view.created_at = order.created_at
+    read_view.updated_at = order.updated_at
+    return read_view
+
+
+def mark_order_read_view_tombstoned(order_id: UUID, db: Session) -> None:
+    """Set tombstoned_at on the order read projection."""
+    read_view = db.query(OrderReadView).filter(OrderReadView.id == order_id).first()
+    if read_view is None:
+        raise ValueError("Order read view not found")
+
+    read_view.tombstoned_at = datetime.now(timezone.utc)
+
+
+def get_order(order_id: UUID, db: Session) -> OrderReadView | None:
+    """Fetch an order read projection by ID, excluding tombstoned orders."""
     return (
-        db.query(Order)
-        .outerjoin(OrderTombstone, Order.id == OrderTombstone.order_id)
-        .filter(Order.id == order_id, OrderTombstone.order_id.is_(None))
-        .options(joinedload(Order.items))
+        db.query(OrderReadView)
+        .filter(OrderReadView.id == order_id, OrderReadView.tombstoned_at.is_(None))
         .first()
     )
 
 
-def list_orders(skip: int, limit: int, db: Session) -> list[Order]:
-    """List orders with pagination, excluding tombstoned orders.
-
-    Uses LEFT JOIN against order_tombstones to filter out
-    logically deleted orders (tombstone pattern).
-    """
+def list_orders(skip: int, limit: int, db: Session) -> list[OrderReadView]:
+    """List order read projections with pagination, excluding tombstoned orders."""
     return (
-        db.query(Order)
-        .outerjoin(OrderTombstone, Order.id == OrderTombstone.order_id)
-        .filter(OrderTombstone.order_id.is_(None))
-        .options(joinedload(Order.items))
+        db.query(OrderReadView)
+        .filter(OrderReadView.tombstoned_at.is_(None))
         .offset(skip)
         .limit(limit)
         .all()
@@ -118,21 +145,23 @@ def tombstone_order(order_id: UUID, db: Session) -> bool:
 
     tombstone = OrderTombstone(order_id=order_id)
     db.add(tombstone)
+    mark_order_read_view_tombstoned(order_id, db)
     db.commit()
     return True
 
 
-def list_orders_by_customer(customer_id: UUID, db: Session) -> list[Order]:
-    """List all orders for a specific customer, excluding tombstoned orders.
-
-    Uses LEFT JOIN against order_tombstones to filter out
-    logically deleted orders (tombstone pattern).
-    """
+def list_orders_by_customer(
+    customer_id: UUID, skip: int, limit: int, db: Session,
+) -> list[OrderReadView]:
+    """List order read projections for a customer, excluding tombstoned orders."""
     return (
-        db.query(Order)
-        .outerjoin(OrderTombstone, Order.id == OrderTombstone.order_id)
-        .filter(Order.customer_id == customer_id, OrderTombstone.order_id.is_(None))
-        .options(joinedload(Order.items))
+        db.query(OrderReadView)
+        .filter(
+            OrderReadView.customer_id == customer_id,
+            OrderReadView.tombstoned_at.is_(None),
+        )
+        .offset(skip)
+        .limit(limit)
         .all()
     )
 
