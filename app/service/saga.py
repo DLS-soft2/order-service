@@ -26,8 +26,11 @@ VALID_TRANSITIONS: dict[str, str] = {
     "PaymentAuthorized": "PAID",
     "PaymentFailed": "CANCELLED",
     "RestaurantAccepted": "PREPARING",
+    "RestaurantRejected": "CANCELLED",
     "CourierAssigned": "OUT_FOR_DELIVERY",
+    "CourierAssignmentFailed": "CANCELLED",
     "DeliveryCompleted": "DELIVERED",
+    "PaymentRefunded": "CANCELLED",
 }
 
 TERMINAL_STATUSES = {"DELIVERED", "CANCELLED"}

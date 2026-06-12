@@ -120,3 +120,50 @@ def test_apply_transition_updates_updated_at(db):
     apply_transition(order, "PAID", db)
 
     assert order.updated_at >= original_updated_at
+
+
+# --- Saga failure transition tests ---
+
+
+def test_restaurant_rejected_cancels_paid_order(db):
+    """A PAID order transitions to CANCELLED via RestaurantRejected."""
+    order = _make_order(db, "PAID")
+    result = apply_transition(order, "CANCELLED", db)
+
+    assert result is True
+    assert order.status == "CANCELLED"
+
+
+def test_courier_assignment_failed_cancels_preparing_order(db):
+    """A PREPARING order transitions to CANCELLED via CourierAssignmentFailed."""
+    order = _make_order(db, "PREPARING")
+    result = apply_transition(order, "CANCELLED", db)
+
+    assert result is True
+    assert order.status == "CANCELLED"
+
+
+def test_payment_refunded_cancels_any_non_terminal_order(db):
+    """PaymentRefunded can cancel an order from any non-terminal status."""
+    for status in ("PENDING", "PAID", "PREPARING", "OUT_FOR_DELIVERY"):
+        order = _make_order(db, status)
+        result = apply_transition(order, "CANCELLED", db)
+
+        assert result is True
+        assert order.status == "CANCELLED"
+
+
+def test_valid_transitions_contains_failure_events():
+    """VALID_TRANSITIONS maps all three failure events to CANCELLED."""
+    from app.service.saga import VALID_TRANSITIONS
+
+    assert VALID_TRANSITIONS["RestaurantRejected"] == "CANCELLED"
+    assert VALID_TRANSITIONS["CourierAssignmentFailed"] == "CANCELLED"
+    assert VALID_TRANSITIONS["PaymentRefunded"] == "CANCELLED"
+
+
+def test_valid_transitions_has_eight_entries():
+    """VALID_TRANSITIONS has exactly 8 entries (5 original + 3 failure)."""
+    from app.service.saga import VALID_TRANSITIONS
+
+    assert len(VALID_TRANSITIONS) == 8

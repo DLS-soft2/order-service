@@ -146,6 +146,24 @@ def test_missing_order_id_skipped(db):
     assert db.query(ProcessedEvent).count() == 0
 
 
+def test_restaurant_rejected_transitions_to_cancelled(db):
+    """A RestaurantRejected event transitions a PAID order to CANCELLED."""
+    order = _make_order(db, "PAID")
+    event = {
+        "event_type": "RestaurantRejected",
+        "event_id": str(uuid.uuid4()),
+        "order_id": str(order.id),
+        "restaurant_id": str(uuid.uuid4()),
+        "reason": "Kitchen closed",
+        "timestamp": "2026-06-11T12:00:00Z",
+    }
+
+    handle_event(event, "restaurants", db)
+
+    db.refresh(order)
+    assert order.status == "CANCELLED"
+
+
 def test_is_event_processed_returns_false_for_new(db):
     """is_event_processed returns False for an unseen event_id."""
     assert is_event_processed("never-seen-id", db) is False
