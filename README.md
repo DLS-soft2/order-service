@@ -27,9 +27,9 @@ Requires PostgreSQL and Kafka — see `docker-compose.yaml` for local dev.
 | Topic | Direction | Event Types |
 |-------|-----------|-------------|
 | `orders` | **Produces** | `OrderCreated` |
-| `payments` | Consumes | `PaymentAuthorized`, `PaymentFailed` |
-| `restaurants` | Consumes | `RestaurantAccepted` |
-| `couriers` | Consumes | `CourierAssigned` |
+| `payments` | Consumes | `PaymentAuthorized`, `PaymentFailed`, `PaymentRefunded` |
+| `restaurants` | Consumes | `RestaurantAccepted`, `RestaurantRejected` |
+| `couriers` | Consumes | `CourierAssigned`, `CourierAssignmentFailed` |
 | `deliveries` | Consumes | `DeliveryCompleted` |
 
 ## Order Status Flow
@@ -54,8 +54,11 @@ Status transitions are driven by incoming Kafka events:
 | `PaymentAuthorized` | PENDING → PAID |
 | `PaymentFailed` | any → CANCELLED |
 | `RestaurantAccepted` | PAID → PREPARING |
+| `RestaurantRejected` | PAID → CANCELLED |
 | `CourierAssigned` | PREPARING → OUT_FOR_DELIVERY |
+| `CourierAssignmentFailed` | PREPARING → CANCELLED |
 | `DeliveryCompleted` | OUT_FOR_DELIVERY → DELIVERED |
+| `PaymentRefunded` | any non-terminal → CANCELLED |
 
 ### CQRS (Command Query Responsibility Segregation)
 
@@ -108,6 +111,6 @@ Migrations managed by **Alembic** (`alembic/versions/`).
 ## Tests
 
 ```bash
-poetry run pytest -v              # 55 tests
+poetry run pytest -v              # 66 tests
 poetry run pylint app/            # >= 9.0/10
 ```
