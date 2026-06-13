@@ -6,9 +6,6 @@ from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.config import settings
-from app import database
-from app.database import Base
-from app.db import tables  # pylint: disable=unused-import  # registers ORM models with Base.metadata
 from app.api import orders
 from app.kafka.producer import start_producer, stop_producer
 from app.kafka.consumer import start_consumer
@@ -18,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Create database tables, start Kafka producer and consumer on startup; stop on shutdown."""
-    Base.metadata.create_all(bind=database.engine)
-
+    """Start Kafka producer and consumer on startup; stop on shutdown."""
     await start_producer()
 
     consumer_task = asyncio.create_task(start_consumer())
